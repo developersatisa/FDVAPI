@@ -50,13 +50,11 @@ else:
     logger.warning("OpenAI Client not initialized (Missing API Key). AI Analysis will be skipped.")
 
 # Prompts
-SYSTEM_PROMPT = """Eres un asistente experto en EXTRACCION DE DATOS ESTRUCTURADOS A PARTIR DE IMAGENES DE DOCUMENTOS OFICIALES.
+SYSTEM_PROMPT = """Eres un asistente experto en EXTRACCION DE DATOS. Tu tarea es analizar la imagen y generar un JSON válido.
 
-Tu tarea es analizar una imagen de un documento y extraer la informacion relevante en un UNICO OBJETO JSON.
+ESTRICTAMENTE SOLO JSON.
 
-RESPONDE EXCLUSIVAMENTE CON UN OBJETO JSON, SIN TEXTO ADICIONAL, SIN EXPLICACIONES, SIN COMENTARIOS.
-
-El objeto JSON DEBE contener EXACTAMENTE las siguientes claves:
+Campos requeridos:
 - MINISTERIO
 - FIRMANTE
 - TIPO_DOCUMENTO
@@ -67,31 +65,13 @@ El objeto JSON DEBE contener EXACTAMENTE las siguientes claves:
 - NOMBRE_APELLIDOS
 - DIRECCION
 
-DEFINICIONES Y CRITERIOS:
-- TIPO_DOCUMENTO: identifica el tipo de documento segun su contexto y contenido.
-  Ejemplos: DECLARACION JURADA, CERTIFICADO MEDICO OFICIAL, REVALORIZACION, FACTURA DE LUZ, FE DE VIDA Y ESTADO, DNI, MATRIMONIO, ETC.
-  Si NO es posible identificar el tipo con claridad, asigna el valor: "REVISION MANUAL".
+Instrucciones de Formato:
+1. TIPO_DOCUMENTO: Si no es claro, usa "REVISION MANUAL".
+2. FECHAS: Formato DD/MM/AAAA.
+3. TEXTO: MAYUSCULAS, SIN TILDES (A,E,I,O,U), Ñ->N.
+4. Si un dato no se encuentra, usa null.
 
-REGLAS GENERALES:
-- Si un campo NO aparece en el documento o no puede inferirse con certeza, su valor DEBE ser null.
-- NO inventes informacion.
-- NO combines datos de diferentes secciones si no esta claramente indicado.
-
-NORMALIZACION OBLIGATORIA DEL TEXTO (ESTRICTAMENTE):
-- TODO el texto debe estar en MAYUSCULAS.
-- ELIMINA TODOS LOS ACENTOS Y TILDES:
-  (Á -> A, É -> E, Í -> I, Ó -> O, Ú -> U, Ü -> U).
-- REEMPLAZA SIEMPRE la letra 'Ñ' por 'N'.
-- ELIMINA CARACTERES ESPECIALES (por ejemplo: º, ª, -, _, ., ,).
-- SE PERMITE UNICAMENTE el uso de las barras: / y \\.
-- NO incluyas simbolos no visibles o caracteres de control.
-
-FORMATO DE FECHAS (OBLIGATORIO):
-- TODAS las fechas deben seguir el formato: DD/MM/AAAA.
-- NO omitas las barras inclinadas bajo ninguna circunstancia.
-- Ejemplo valido: "24/11/1951".
-
-ASEGURATE de que el JSON resultante sea VALIDO y PARSEABLE."""
+Responde ÚNICAMENTE con el objeto JSON."""
 
 USER_PROMPT = "Analiza esta imagen y extrae la información solicitada en formato JSON."
 
@@ -224,6 +204,10 @@ async def analyze_image_with_gpt4o(image_bytes: bytes) -> DocumentData:
         )
         content = response.choices[0].message.content
         logger.info(f"AI Raw Response: {content}")
+
+        if not content:
+            logger.warning("AI returned empty content. Returning empty structure.")
+            return DocumentData(TIPO_DOCUMENTO="ERROR_EMPTY_RESPONSE")
         
         # Parse JSON
         data_dict = json.loads(content)
