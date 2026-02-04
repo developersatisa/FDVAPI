@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables (CRITICAL: Never commit secrets)
+.env
+.env.local
+
+# Virtual Environments
+venv/
+env/
+.venv/
+
+# Distribution / Packaging
+build/
+dist/
+*.egg-info/
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs
+*.log
