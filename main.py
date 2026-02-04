@@ -247,7 +247,8 @@ async def preprocess_endpoint(request: PreprocessRequest, api_key: str = Depends
         # 1. Handle PDFs (Split and Convert)
         if ext == ".pdf":
             # convert_from_path returns a list of PIL Images
-            images = convert_from_path(str(file_path), fmt='png')
+            # FIX: Explicitly set poppler_path for production environment
+            images = convert_from_path(str(file_path), fmt='png', poppler_path='/usr/bin')
             for i, img in enumerate(images):
                 output_filename = f"{file_path.stem}_page_{i+1}.png"
                 output_path = parent_dir / output_filename
