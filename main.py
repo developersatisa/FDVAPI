@@ -50,28 +50,84 @@ else:
     logger.warning("OpenAI Client not initialized (Missing API Key). AI Analysis will be skipped.")
 
 # Prompts
-SYSTEM_PROMPT = """Eres un asistente experto en EXTRACCION DE DATOS. Tu tarea es analizar la imagen y generar un JSON válido.
+SYSTEM_PROMPT = """
+Eres un asistente experto en EXTRACCION Y CLASIFICACION DE DOCUMENTOS DESDE IMAGENES.
 
-ESTRICTAMENTE SOLO JSON.
+Tu tarea es:
+1) Clasificar el tipo de documento.
+2) Extraer los datos requeridos.
+3) Devolver EXCLUSIVAMENTE un JSON valido.
 
-Campos requeridos:
-- MINISTERIO
-- FIRMANTE
-- TIPO_DOCUMENTO
-- DNI
-- FECHA_NACIMIENTO
-- FECHA_DOCUMENTO
-- ANO
-- NOMBRE_APELLIDOS
-- DIRECCION
+NO agregues explicaciones.
+NO agregues texto fuera del JSON.
+NO uses markdown.
+NO inventes datos.
+Si un campo no es claramente visible, usa null.
 
-Instrucciones de Formato:
-1. TIPO_DOCUMENTO: Si no es claro, usa "REVISION MANUAL".
-2. FECHAS: Formato DD/MM/AAAA.
-3. TEXTO: MAYUSCULAS, SIN TILDES (A,E,I,O,U), Ñ->N.
-4. Si un dato no se encuentra, usa null.
+El JSON debe contener EXACTAMENTE estas claves y en este orden:
 
-Responde ÚNICAMENTE con el objeto JSON."""
+{
+  "MINISTERIO": null,
+  "FIRMANTE": null,
+  "TIPO_DOCUMENTO": null,
+  "DNI": null,
+  "FECHA_NACIMIENTO": null,
+  "FECHA_DOCUMENTO": null,
+  "ANO": null,
+  "NOMBRE_APELLIDOS": null,
+  "DIRECCION": null
+}
+
+--------------------------------
+CLASIFICACION TIPO_DOCUMENTO
+--------------------------------
+
+TIPO_DOCUMENTO debe ser EXACTAMENTE uno de estos valores:
+
+- "FE DE VIDA"
+- "REVALORIZACION"
+- "ACTA DE COMPAREENCIA DE FE DE VIDA"
+- "LOGO"
+- "FACTURA DE LUZ"
+- "CERTIFICADO DE RENTAS"
+- "DOCUMENTO DE IDENTIDAD"
+- "CERTIFICADO DE MATRIMONIO"
+- "REVISION MANUAL"
+
+Reglas de clasificacion:
+
+1) Si la imagen contiene unicamente un logotipo sin estructura de documento → "LOGO".
+2) Si aparece literalmente "ACTA DE COMPARECENCIA" → "ACTA DE COMPAREENCIA DE FE DE VIDA".
+3) Si aparece "FE DE VIDA" sin "ACTA DE COMPARECENCIA" → "FE DE VIDA".
+4) Si es una factura electrica o contiene datos de consumo electrico → "FACTURA DE LUZ".
+5) Si es DNI, NIE, pasaporte o documento oficial de identidad → "DOCUMENTO DE IDENTIDAD".
+6) Si no coincide claramente con uno de los anteriores → "REVISION MANUAL".
+
+--------------------------------
+REGLAS DE FORMATO
+--------------------------------
+
+1) TEXTO:
+- MAYUSCULAS.
+- SIN TILDES.
+- Reemplazar Ñ por N.
+- Sin saltos de linea.
+- Sin dobles espacios.
+
+2) FECHAS:
+- Formato DD/MM/AAAA.
+- Si no es completa → null.
+
+3) DNI:
+- Sin espacios.
+- Sin puntos.
+- Solo letras y numeros.
+- Si no es 100 por ciento legible → null.
+
+4) No inferir datos no visibles claramente.
+
+Responde SOLO con el objeto JSON.
+"""
 
 USER_PROMPT = "Analiza esta imagen y extrae la información solicitada en formato JSON."
 
@@ -246,17 +302,22 @@ async def preprocess_endpoint(request: PreprocessRequest, api_key: str = Depends
     try:
         # 1. Handle PDFs (Split and Convert)
         if ext == ".pdf":
-            # convert_from_path returns a list of PIL Images
-            # FIX: Explicitly set poppler_path for production environment
-            images = convert_from_path(str(file_path), fmt='png', poppler_path='/usr/bin')
+            # Intentamos convertir usando el PATH del sistema primero
+            try:
+                images = convert_from_path(str(file_path), fmt='png')
+            except Exception as e:
+                logger.warning(f"No se encontró pdftoppm en el PATH ({e}). Reintentando con /usr/bin...")
+                # Fallback a la ruta común de Linux
+                images = convert_from_path(str(file_path), fmt='png', poppler_path='/usr/bin')
+            
             for i, img in enumerate(images):
                 output_filename = f"{file_path.stem}_page_{i+1}.png"
                 output_path = parent_dir / output_filename
                 img.save(output_path, "PNG")
                 processed_files.append(str(output_path))
             
-            logger.info(f"Preprocessed PDF: {original_name} -> {len(images)} pages. Deleting original.")
-            file_path.unlink() # Delete original PDF
+            logger.info(f"PDF preprocesado: {original_name} -> {len(images)} páginas. Eliminando original.")
+            file_path.unlink() # Borrar PDF original
 
         # 2. Handle Images (Convert to PNG if not already)
         elif ext in [".jpg", ".jpeg", ".tiff", ".bmp", ".webp", ".jfif"]:
